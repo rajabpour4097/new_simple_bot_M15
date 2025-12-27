@@ -14,6 +14,7 @@ import inspect, os
 from metatrader5_config import MT5_CONFIG, TRADING_CONFIG, DYNAMIC_RISK_CONFIG
 from email_notifier import send_trade_email_async
 from analytics.hooks import log_signal, log_position_event
+from m15_filter_strategy import apply_m15_filter, format_m15_email_info
 
 
 
@@ -618,28 +619,92 @@ def main():
 
                     stop_distance = abs(buy_entry_price - stop)
                     reward_end = buy_entry_price + (stop_distance * win_ratio)
-                    log(f'stop = {stop}', color='green')
-                    log(f'reward_end = {reward_end}', color='green')
+                    log(f'Original stop = {stop}', color='green')
+                    log(f'Original reward_end = {reward_end}', color='green')
 
-                    # ارسال سفارش BUY با هر stop و reward
-                    result = mt5_conn.open_buy_position(
-                        tick=last_tick,
-                        sl=stop,
-                        tp=reward_end,
-                        comment=f"Bullish Swing {last_swing_type}",
-                        risk_pct=MT5_CONFIG['risk_percent']
+                    # === اعمال فیلتر M15 (استراتژی S2) ===
+                    m15_action, m15_reason, final_sl, final_tp, final_direction, m15_info = apply_m15_filter(
+                        signal_direction='buy',
+                        entry_price=buy_entry_price,
+                        original_sl=stop,
+                        win_ratio=win_ratio,
+                        symbol=MT5_CONFIG['symbol']
                     )
+                    
+                    log(f'📊 M15 Filter Result: {m15_action} - {m15_reason}', color='cyan')
+                    
+                    # بررسی نتیجه فیلتر
+                    if m15_action == 'REJECT':
+                        log(f'❌ Signal REJECTED by M15 filter: {m15_reason}', color='red')
+                        # ارسال ایمیل اطلاع‌رسانی رد سیگنال
+                        try:
+                            m15_email_info = format_m15_email_info(m15_action, m15_reason, m15_info, 'buy', '')
+                            send_trade_email_async(
+                                subject=f"SIGNAL REJECTED - BUY {MT5_CONFIG['symbol']}",
+                                body=(
+                                    f"❌ TRADING SIGNAL REJECTED BY M15 FILTER ❌\n\n"
+                                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                    f"Symbol: {MT5_CONFIG['symbol']}\n"
+                                    f"Original Signal: BUY (Bullish Swing)\n"
+                                    f"Entry Would Be: {buy_entry_price:.5f}\n"
+                                    f"SL Would Be: {stop:.5f}\n"
+                                    f"TP Would Be: {reward_end:.5f}\n"
+                                    f"{m15_email_info}"
+                                )
+                            )
+                        except Exception as _e:
+                            log(f'Reject email failed: {_e}', color='red')
+                        state.reset()
+                        reset_state_and_window()
+                        continue
+                    
+                    # تنظیم پارامترهای نهایی بر اساس نتیجه فیلتر
+                    if m15_action == 'EXECUTE_REVERSED':
+                        log(f'🔄 Executing REVERSED position: {final_direction.upper()}', color='blue')
+                        trade_type = final_direction
+                        trade_sl = final_sl
+                        trade_tp = final_tp
+                        trade_comment = f"REVERSED Swing (M15 {m15_info.get('direction', '')} {m15_info.get('body_ratio', 0):.0f}%)"
+                    else:
+                        log(f'✅ Executing ORIGINAL position: BUY', color='green')
+                        trade_type = 'buy'
+                        trade_sl = stop
+                        trade_tp = reward_end
+                        trade_comment = f"Bullish Swing {last_swing_type}"
+                    
+                    log(f'Final trade: {trade_type.upper()} | SL={trade_sl:.5f} | TP={trade_tp:.5f}', color='cyan')
+                    
+                    # ارسال سفارش با پارامترهای نهایی
+                    if trade_type == 'buy':
+                        result = mt5_conn.open_buy_position(
+                            tick=last_tick,
+                            sl=trade_sl,
+                            tp=trade_tp,
+                            comment=trade_comment,
+                            risk_pct=MT5_CONFIG['risk_percent']
+                        )
+                    else:
+                        result = mt5_conn.open_sell_position(
+                            tick=last_tick,
+                            sl=trade_sl,
+                            tp=trade_tp,
+                            comment=trade_comment,
+                            risk_pct=MT5_CONFIG['risk_percent']
+                        )
+                    
                     # ارسال ایمیل غیرمسدودکننده
                     try:
+                        m15_email_info = format_m15_email_info(m15_action, m15_reason, m15_info, 'buy', trade_type)
                         send_trade_email_async(
-                            subject=f"NEW BUY ORDER {MT5_CONFIG['symbol']}",
+                            subject=f"NEW {trade_type.upper()} ORDER {MT5_CONFIG['symbol']} {'(REVERSED)' if m15_action == 'EXECUTE_REVERSED' else ''}",
                             body=(
                                 f"Time: {datetime.now()}\n"
                                 f"Symbol: {MT5_CONFIG['symbol']}\n"
-                                f"Type: BUY (Bullish Swing)\n"
+                                f"Type: {trade_type.upper()} {'(REVERSED from BUY)' if m15_action == 'EXECUTE_REVERSED' else '(Bullish Swing)'}\n"
                                 f"Entry: {buy_entry_price}\n"
-                                f"SL: {stop}\n"
-                                f"TP: {reward_end}\n"
+                                f"SL: {trade_sl}\n"
+                                f"TP: {trade_tp}\n"
+                                f"{m15_email_info}"
                             )
                         )
                     except Exception as _e:
@@ -648,18 +713,18 @@ def main():
                     if result and getattr(result, 'retcode', None) == 10009:
                         log(f'✅ BUY order executed successfully', color='green')
                         log(f'📊 Ticket={result.order} Price={result.price} Volume={result.volume}', color='cyan')
-                        # ارسال ایمیل غیرمسدودکننده
-                        try:
-                            send_trade_email_async(
-                                subject = f"Last order result",
-                                body=(
-                                    f"Ticket={result.order}\n"
-                                    f"Price={result.price}\n"
-                                    f"Volume={result.volume}\n"
-                                )
-                            )
-                        except Exception as _e:
-                            log(f'Email dispatch failed: {_e}', color='red')
+                        # # ارسال ایمیل غیرمسدودکننده
+                        # try:
+                        #     send_trade_email_async(
+                        #         subject = f"Last order result",
+                        #         body=(
+                        #             f"Ticket={result.order}\n"
+                        #             f"Price={result.price}\n"
+                        #             f"Volume={result.volume}\n"
+                        #         )
+                        #     )
+                        # except Exception as _e:
+                        #     log(f'Email dispatch failed: {_e}', color='red')
                     else:
                         if result:
                             log(f'❌ BUY failed retcode={result.retcode} comment={result.comment}', color='red')
@@ -785,29 +850,92 @@ def main():
 
                     stop_distance = abs(sell_entry_price - stop)
                     reward_end = sell_entry_price - (stop_distance * win_ratio)
-                    log(f'stop = {stop}', color='red')
-                    log(f'reward_end = {reward_end}', color='red')
+                    log(f'Original stop = {stop}', color='red')
+                    log(f'Original reward_end = {reward_end}', color='red')
 
-                    # ارسال سفارش SELL با هر stop و reward
-                    result = mt5_conn.open_sell_position(
-                        tick=last_tick,
-                        sl=stop,
-                        tp=reward_end,
-                        comment=f"Bearish Swing {last_swing_type}",
-                        risk_pct=MT5_CONFIG['risk_percent']
+                    # === اعمال فیلتر M15 (استراتژی S2) ===
+                    m15_action, m15_reason, final_sl, final_tp, final_direction, m15_info = apply_m15_filter(
+                        signal_direction='sell',
+                        entry_price=sell_entry_price,
+                        original_sl=stop,
+                        win_ratio=win_ratio,
+                        symbol=MT5_CONFIG['symbol']
                     )
+                    
+                    log(f'📊 M15 Filter Result: {m15_action} - {m15_reason}', color='cyan')
+                    
+                    # بررسی نتیجه فیلتر
+                    if m15_action == 'REJECT':
+                        log(f'❌ Signal REJECTED by M15 filter: {m15_reason}', color='red')
+                        # ارسال ایمیل اطلاع‌رسانی رد سیگنال
+                        try:
+                            m15_email_info = format_m15_email_info(m15_action, m15_reason, m15_info, 'sell', '')
+                            send_trade_email_async(
+                                subject=f"SIGNAL REJECTED - SELL {MT5_CONFIG['symbol']}",
+                                body=(
+                                    f"❌ TRADING SIGNAL REJECTED BY M15 FILTER ❌\n\n"
+                                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                    f"Symbol: {MT5_CONFIG['symbol']}\n"
+                                    f"Original Signal: SELL (Bearish Swing)\n"
+                                    f"Entry Would Be: {sell_entry_price:.5f}\n"
+                                    f"SL Would Be: {stop:.5f}\n"
+                                    f"TP Would Be: {reward_end:.5f}\n"
+                                    f"{m15_email_info}"
+                                )
+                            )
+                        except Exception as _e:
+                            log(f'Reject email failed: {_e}', color='red')
+                        state.reset()
+                        reset_state_and_window()
+                        continue
+                    
+                    # تنظیم پارامترهای نهایی بر اساس نتیجه فیلتر
+                    if m15_action == 'EXECUTE_REVERSED':
+                        log(f'🔄 Executing REVERSED position: {final_direction.upper()}', color='blue')
+                        trade_type = final_direction
+                        trade_sl = final_sl
+                        trade_tp = final_tp
+                        trade_comment = f"REVERSED Swing (M15 {m15_info.get('direction', '')} {m15_info.get('body_ratio', 0):.0f}%)"
+                    else:
+                        log(f'✅ Executing ORIGINAL position: SELL', color='green')
+                        trade_type = 'sell'
+                        trade_sl = stop
+                        trade_tp = reward_end
+                        trade_comment = f"Bearish Swing {last_swing_type}"
+                    
+                    log(f'Final trade: {trade_type.upper()} | SL={trade_sl:.5f} | TP={trade_tp:.5f}', color='cyan')
+                    
+                    # ارسال سفارش با پارامترهای نهایی
+                    if trade_type == 'sell':
+                        result = mt5_conn.open_sell_position(
+                            tick=last_tick,
+                            sl=trade_sl,
+                            tp=trade_tp,
+                            comment=trade_comment,
+                            risk_pct=MT5_CONFIG['risk_percent']
+                        )
+                    else:
+                        result = mt5_conn.open_buy_position(
+                            tick=last_tick,
+                            sl=trade_sl,
+                            tp=trade_tp,
+                            comment=trade_comment,
+                            risk_pct=MT5_CONFIG['risk_percent']
+                        )
                     
                     # ارسال ایمیل غیرمسدودکننده
                     try:
+                        m15_email_info = format_m15_email_info(m15_action, m15_reason, m15_info, 'sell', trade_type)
                         send_trade_email_async(
-                            subject=f"NEW SELL ORDER {MT5_CONFIG['symbol']}",
+                            subject=f"NEW {trade_type.upper()} ORDER {MT5_CONFIG['symbol']} {'(REVERSED)' if m15_action == 'EXECUTE_REVERSED' else ''}",
                             body=(
                                 f"Time: {datetime.now()}\n"
                                 f"Symbol: {MT5_CONFIG['symbol']}\n"
-                                f"Type: SELL (Bearish Swing)\n"
+                                f"Type: {trade_type.upper()} {'(REVERSED from SELL)' if m15_action == 'EXECUTE_REVERSED' else '(Bearish Swing)'}\n"
                                 f"Entry: {sell_entry_price}\n"
-                                f"SL: {stop}\n"
-                                f"TP: {reward_end}\n"
+                                f"SL: {trade_sl}\n"
+                                f"TP: {trade_tp}\n"
+                                f"{m15_email_info}"
                             )
                         )
                     except Exception as _e:
@@ -817,17 +945,17 @@ def main():
                         log(f'✅ SELL order executed successfully', color='green')
                         log(f'📊 Ticket={result.order} Price={result.price} Volume={result.volume}', color='cyan')
                         # ارسال ایمیل غیرمسدودکننده
-                        try:
-                            send_trade_email_async(
-                                subject = f"Last order result",
-                                body=(
-                                    f"Ticket={result.order}\n"
-                                    f"Price={result.price}\n"
-                                    f"Volume={result.volume}\n"
-                                )
-                            )
-                        except Exception as _e:
-                            log(f'Email dispatch failed: {_e}', color='red')
+                        # try:
+                        #     send_trade_email_async(
+                        #         subject = f"Last order result",
+                        #         body=(
+                        #             f"Ticket={result.order}\n"
+                        #             f"Price={result.price}\n"
+                        #             f"Volume={result.volume}\n"
+                        #         )
+                        #     )
+                        # except Exception as _e:
+                        #     log(f'Email dispatch failed: {_e}', color='red')
                     else:
                         if result:
                             log(f'❌ SELL failed retcode={result.retcode} comment={result.comment}', color='red')
