@@ -548,26 +548,6 @@ def main():
                     log(f"📈 Buy signal triggered", color='green')
                     last_tick = mt5.symbol_info_tick(MT5_CONFIG['symbol'])
                     buy_entry_price = last_tick.ask
-                  
-                    # لاگ سیگنال (قبل از ارسال سفارش)
-                    try:
-                        log_signal(
-                            symbol=MT5_CONFIG['symbol'],
-                            strategy="swing_fib_v1",
-                            direction="buy",
-                            rr=win_ratio,
-                            entry=buy_entry_price,
-                            sl=float(state.fib_levels['1.0']),
-                            tp=None,
-                            fib=state.fib_levels,
-                            confidence=None,
-                            features_json=None,
-                            note="triggered_by_pullback"
-                        )
-                    except Exception:
-                        pass
-                    # دریافت قیمت لحظه‌ای بازار از MT5
-                    # current_open_point = cache_data.iloc[-1]['close']
                     log(f'Start long position income {cache_data.iloc[-1].name}', color='blue')
                     log(f'current_open_point (market ask): {buy_entry_price}', color='blue')
                     # ENTRY CONTEXT (BUY): fib snapshot + touches
@@ -673,6 +653,24 @@ def main():
                         trade_comment = f"Bullish Swing {last_swing_type}"
                     
                     log(f'Final trade: {trade_type.upper()} | SL={trade_sl:.5f} | TP={trade_tp:.5f}', color='cyan')
+                    
+                    # لاگ سیگنال با اطلاعات نهایی (بعد از M15 filter)
+                    try:
+                        log_signal(
+                            symbol=MT5_CONFIG['symbol'],
+                            strategy="swing_fib_v1_m15_s2",
+                            direction=trade_type,  # جهت نهایی (buy یا sell)
+                            rr=win_ratio,
+                            entry=buy_entry_price,
+                            sl=trade_sl,  # SL نهایی
+                            tp=trade_tp,  # TP نهایی
+                            fib=state.fib_levels,
+                            confidence=m15_info.get('body_ratio', None) if m15_info else None,
+                            features_json=None,
+                            note=f"original_signal:buy|m15_action:{m15_action}|m15_dir:{m15_info.get('direction', 'N/A') if m15_info else 'N/A'}|final_dir:{trade_type}"
+                        )
+                    except Exception as e:
+                        log(f'log_signal failed: {e}', color='yellow')
                     
                     # ارسال سفارش با پارامترهای نهایی
                     if trade_type == 'buy':
@@ -789,23 +787,6 @@ def main():
                     log(f"📉 Sell signal triggered", color='red')
                     last_tick = mt5.symbol_info_tick(MT5_CONFIG['symbol'])
                     sell_entry_price = last_tick.bid
-                   
-                    try:
-                        log_signal(
-                            symbol=MT5_CONFIG['symbol'],
-                            strategy="swing_fib_v1",
-                            direction="sell",
-                            rr=win_ratio,
-                            entry=sell_entry_price,
-                            sl=float(state.fib_levels['1.0']),
-                            tp=None,
-                            fib=state.fib_levels,
-                            confidence=None,
-                            features_json=None,
-                            note="triggered_by_pullback"
-                        )
-                    except Exception:
-                        pass
                     log(f'Start short position income {cache_data.iloc[-1].name}', color='red')
                     log(f'current_open_point (market bid): {sell_entry_price}', color='red')
                     # ENTRY CONTEXT (SELL): fib snapshot + touches
@@ -904,6 +885,24 @@ def main():
                         trade_comment = f"Bearish Swing {last_swing_type}"
                     
                     log(f'Final trade: {trade_type.upper()} | SL={trade_sl:.5f} | TP={trade_tp:.5f}', color='cyan')
+                    
+                    # لاگ سیگنال با اطلاعات نهایی (بعد از M15 filter)
+                    try:
+                        log_signal(
+                            symbol=MT5_CONFIG['symbol'],
+                            strategy="swing_fib_v1_m15_s2",
+                            direction=trade_type,  # جهت نهایی (buy یا sell)
+                            rr=win_ratio,
+                            entry=sell_entry_price,
+                            sl=trade_sl,  # SL نهایی
+                            tp=trade_tp,  # TP نهایی
+                            fib=state.fib_levels,
+                            confidence=m15_info.get('body_ratio', None) if m15_info else None,
+                            features_json=None,
+                            note=f"original_signal:sell|m15_action:{m15_action}|m15_dir:{m15_info.get('direction', 'N/A')}|final_dir:{trade_type}"
+                        )
+                    except Exception as e:
+                        log(f'log_signal failed: {e}', color='yellow')
                     
                     # ارسال سفارش با پارامترهای نهایی
                     if trade_type == 'sell':
