@@ -520,6 +520,7 @@ def main():
                                 send_trade_email_async(
                                     subject=f"SIGNAL SKIPPED - BUY {MT5_CONFIG['symbol']}",
                                     body=(
+                                        f"It's for 5000 dollars account.\n\n"
                                         f"🚫 TRADING SIGNAL SKIPPED 🚫\n\n"
                                         f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                                         f"Symbol: {MT5_CONFIG['symbol']}\n"
@@ -622,6 +623,7 @@ def main():
                             send_trade_email_async(
                                 subject=f"SIGNAL REJECTED - BUY {MT5_CONFIG['symbol']}",
                                 body=(
+                                    f"It's for 5000 dollars account.\n\n"
                                     f"❌ TRADING SIGNAL REJECTED BY M15 FILTER ❌\n\n"
                                     f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                                     f"Symbol: {MT5_CONFIG['symbol']}\n"
@@ -696,6 +698,7 @@ def main():
                         send_trade_email_async(
                             subject=f"NEW {trade_type.upper()} ORDER {MT5_CONFIG['symbol']} {'(REVERSED)' if m15_action == 'EXECUTE_REVERSED' else ''}",
                             body=(
+                                f"It's for 5000 dollars account.\n\n"
                                 f"Time: {datetime.now()}\n"
                                 f"Symbol: {MT5_CONFIG['symbol']}\n"
                                 f"Type: {trade_type.upper()} {'(REVERSED from BUY)' if m15_action == 'EXECUTE_REVERSED' else '(Bullish Swing)'}\n"
@@ -759,6 +762,7 @@ def main():
                                 send_trade_email_async(
                                     subject=f"SIGNAL SKIPPED - SELL {MT5_CONFIG['symbol']}",
                                     body=(
+                                        f"It's for 5000 dollars account.\n\n"
                                         f"🚫 TRADING SIGNAL SKIPPED 🚫\n\n"
                                         f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                                         f"Symbol: {MT5_CONFIG['symbol']}\n"
@@ -854,6 +858,7 @@ def main():
                             send_trade_email_async(
                                 subject=f"SIGNAL REJECTED - SELL {MT5_CONFIG['symbol']}",
                                 body=(
+                                    f"It's for 5000 dollars account.\n\n"
                                     f"❌ TRADING SIGNAL REJECTED BY M15 FILTER ❌\n\n"
                                     f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                                     f"Symbol: {MT5_CONFIG['symbol']}\n"
@@ -928,6 +933,7 @@ def main():
                         send_trade_email_async(
                             subject=f"NEW {trade_type.upper()} ORDER {MT5_CONFIG['symbol']} {'(REVERSED)' if m15_action == 'EXECUTE_REVERSED' else ''}",
                             body=(
+                                f"It's for 5000 dollars account.\n\n"
                                 f"Time: {datetime.now()}\n"
                                 f"Symbol: {MT5_CONFIG['symbol']}\n"
                                 f"Type: {trade_type.upper()} {'(REVERSED from SELL)' if m15_action == 'EXECUTE_REVERSED' else '(Bearish Swing)'}\n"
@@ -941,7 +947,7 @@ def main():
                         log(f'Email dispatch failed: {_e}', color='red')
                     
                     if result and getattr(result, 'retcode', None) == 10009:
-                        log(f'✅ SELL order executed successfully', color='green')
+                        log(f'✅ {trade_type.upper()} order executed successfully', color='green')
                         log(f'📊 Ticket={result.order} Price={result.price} Volume={result.volume}', color='cyan')
                         # ارسال ایمیل غیرمسدودکننده
                         # try:
@@ -957,9 +963,9 @@ def main():
                         #     log(f'Email dispatch failed: {_e}', color='red')
                     else:
                         if result:
-                            log(f'❌ SELL failed retcode={result.retcode} comment={result.comment}', color='red')
+                            log(f'❌ {trade_type.upper()} failed retcode={result.retcode} comment={result.comment}', color='red')
                         else:
-                            log(f'❌ SELL failed (no result object)', color='red')
+                            log(f'❌ {trade_type.upper()} failed (no result object)', color='red')
                     state.reset()
 
                     reset_state_and_window()
