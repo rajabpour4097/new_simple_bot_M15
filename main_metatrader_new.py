@@ -674,6 +674,19 @@ def main():
                     except Exception as e:
                         log(f'log_signal failed: {e}', color='yellow')
                     
+                    # گرفتن tick جدید قبل از ارسال سفارش (برای اطمینان از قیمت‌های به‌روز)
+                    last_tick = mt5.symbol_info_tick(MT5_CONFIG['symbol'])
+                    
+                    # اگر پوزیشن ریورس شده، SL و TP رو بر اساس قیمت واقعی معامله محاسبه کن
+                    if m15_action == 'EXECUTE_REVERSED' and trade_type == 'sell':
+                        # برای SELL از bid استفاده میشه
+                        actual_entry = last_tick.bid
+                        # فاصله SL اصلی رو نگه دار
+                        original_stop_distance = abs(buy_entry_price - stop)
+                        trade_sl = actual_entry + original_stop_distance  # SL بالای entry برای SELL
+                        trade_tp = actual_entry - (original_stop_distance * win_ratio)  # TP پایین entry
+                        log(f'🔄 Recalculated for SELL: entry={actual_entry:.5f} SL={trade_sl:.5f} TP={trade_tp:.5f}', color='yellow')
+                    
                     # ارسال سفارش با پارامترهای نهایی
                     if trade_type == 'buy':
                         result = mt5_conn.open_buy_position(
@@ -702,7 +715,7 @@ def main():
                                 f"Time: {datetime.now()}\n"
                                 f"Symbol: {MT5_CONFIG['symbol']}\n"
                                 f"Type: {trade_type.upper()} {'(REVERSED from BUY)' if m15_action == 'EXECUTE_REVERSED' else '(Bullish Swing)'}\n"
-                                f"Entry: {buy_entry_price}\n"
+                                f"Entry: {last_tick.ask if trade_type == 'buy' else last_tick.bid}\n"
                                 f"SL: {trade_sl}\n"
                                 f"TP: {trade_tp}\n"
                                 f"{m15_email_info}"
@@ -712,7 +725,7 @@ def main():
                         log(f'Email dispatch failed: {_e}', color='red')
 
                     if result and getattr(result, 'retcode', None) == 10009:
-                        log(f'✅ BUY order executed successfully', color='green')
+                        log(f'✅ {trade_type.upper()} order executed successfully', color='green')
                         log(f'📊 Ticket={result.order} Price={result.price} Volume={result.volume}', color='cyan')
                         # # ارسال ایمیل غیرمسدودکننده
                         # try:
@@ -728,9 +741,9 @@ def main():
                         #     log(f'Email dispatch failed: {_e}', color='red')
                     else:
                         if result:
-                            log(f'❌ BUY failed retcode={result.retcode} comment={result.comment}', color='red')
+                            log(f'❌ {trade_type.upper()} failed retcode={result.retcode} comment={result.comment}', color='red')
                         else:
-                            log(f'❌ BUY failed (no result object)', color='red')
+                            log(f'❌ {trade_type.upper()} failed (no result object)', color='red')
                     state.reset()
 
                     reset_state_and_window()
@@ -909,6 +922,19 @@ def main():
                     except Exception as e:
                         log(f'log_signal failed: {e}', color='yellow')
                     
+                    # گرفتن tick جدید قبل از ارسال سفارش (برای اطمینان از قیمت‌های به‌روز)
+                    last_tick = mt5.symbol_info_tick(MT5_CONFIG['symbol'])
+                    
+                    # اگر پوزیشن ریورس شده، SL و TP رو بر اساس قیمت واقعی معامله محاسبه کن
+                    if m15_action == 'EXECUTE_REVERSED' and trade_type == 'buy':
+                        # برای BUY از ask استفاده میشه
+                        actual_entry = last_tick.ask
+                        # فاصله SL اصلی رو نگه دار
+                        original_stop_distance = abs(sell_entry_price - stop)
+                        trade_sl = actual_entry - original_stop_distance  # SL پایین entry برای BUY
+                        trade_tp = actual_entry + (original_stop_distance * win_ratio)  # TP بالای entry
+                        log(f'🔄 Recalculated for BUY: entry={actual_entry:.5f} SL={trade_sl:.5f} TP={trade_tp:.5f}', color='yellow')
+                    
                     # ارسال سفارش با پارامترهای نهایی
                     if trade_type == 'sell':
                         result = mt5_conn.open_sell_position(
@@ -937,7 +963,7 @@ def main():
                                 f"Time: {datetime.now()}\n"
                                 f"Symbol: {MT5_CONFIG['symbol']}\n"
                                 f"Type: {trade_type.upper()} {'(REVERSED from SELL)' if m15_action == 'EXECUTE_REVERSED' else '(Bearish Swing)'}\n"
-                                f"Entry: {sell_entry_price}\n"
+                                f"Entry: {last_tick.ask if trade_type == 'buy' else last_tick.bid}\n"
                                 f"SL: {trade_sl}\n"
                                 f"TP: {trade_tp}\n"
                                 f"{m15_email_info}"
