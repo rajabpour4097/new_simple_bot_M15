@@ -152,13 +152,23 @@ class MT5Connector:
         if not symbol_info.visible:
             print(f"❌ [order_send] Symbol {request.get('symbol')} not visible in Market Watch!")
             return None
+        
+        # 🔍 Debug: چاپ جزئیات درخواست
+        print(f"[order_send] Request details:")
+        print(f"   action={request.get('action')}, symbol={request.get('symbol')}")
+        print(f"   type={request.get('type')}, price={request.get('price')}")
+        print(f"   volume={request.get('volume')}, sl={request.get('sl')}, tp={request.get('tp')}")
+        print(f"   Supported filling modes: {modes}")
 
         # 1) اول مدهای اعلام‌شده‌ی بروکر
         for m in modes:
             req = dict(request)
             req["type_filling"] = m
             res = mt5.order_send(req)
-            tried.append((m, getattr(res, 'retcode', None)))
+            retcode = getattr(res, 'retcode', None)
+            comment = getattr(res, 'comment', 'N/A')
+            tried.append((m, retcode, comment))
+            print(f"   Mode {m}: retcode={retcode}, comment={comment}")
             if res and res.retcode in (RET_OK, mt5.TRADE_RETCODE_PLACED):
                 return res
 
@@ -270,14 +280,30 @@ class MT5Connector:
 
     # ---------- Trading ----------
     def open_buy_position(self, tick, sl, tp, comment="", volume=None, risk_pct=None):
+        print(f"🔍 [open_buy_position] Called with:")
+        print(f"   tick={tick}, sl={sl}, tp={tp}")
+        print(f"   volume={volume}, risk_pct={risk_pct}")
+        
         if not tick:
-            print("No tick data")
+            print("❌ [open_buy_position] No tick data")
             return None
         entry = tick.ask
+        print(f"   entry (ask)={entry}")
+        
         sl_adj, tp_adj = self.calculate_valid_stops(entry, sl, tp, mt5.ORDER_TYPE_BUY)
+        print(f"   sl_adj={sl_adj}, tp_adj={tp_adj}")
+        
         if sl_adj is None:
+            print("❌ [open_buy_position] calculate_valid_stops returned None!")
             return None
+        
         vol = self._resolve_volume(volume, entry, sl_adj, tick, risk_pct)
+        print(f"   vol={vol}")
+        
+        if vol is None or vol <= 0:
+            print(f"❌ [open_buy_position] Invalid volume: {vol}")
+            return None
+        
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
@@ -318,14 +344,30 @@ class MT5Connector:
         return result
 
     def open_sell_position(self, tick, sl, tp, comment="", volume=None, risk_pct=None):
+        print(f"🔍 [open_sell_position] Called with:")
+        print(f"   tick={tick}, sl={sl}, tp={tp}")
+        print(f"   volume={volume}, risk_pct={risk_pct}")
+        
         if not tick:
-            print("No tick data")
+            print("❌ [open_sell_position] No tick data")
             return None
         entry = tick.bid
+        print(f"   entry (bid)={entry}")
+        
         sl_adj, tp_adj = self.calculate_valid_stops(entry, sl, tp, mt5.ORDER_TYPE_SELL)
+        print(f"   sl_adj={sl_adj}, tp_adj={tp_adj}")
+        
         if sl_adj is None:
+            print("❌ [open_sell_position] calculate_valid_stops returned None!")
             return None
+        
         vol = self._resolve_volume(volume, entry, sl_adj, tick, risk_pct)
+        print(f"   vol={vol}")
+        
+        if vol is None or vol <= 0:
+            print(f"❌ [open_sell_position] Invalid volume: {vol}")
+            return None
+        
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
