@@ -242,42 +242,6 @@ class MT5Connector:
 
         return norm(sl_price), norm(tp_price)
 
-    # ---------- Order sending core ----------
-    def try_all_filling_modes(self, request):
-        tried = []
-        modes = self.get_supported_filling_modes()
-
-        # 1) اول مدهای اعلام‌شده‌ی بروکر
-        for m in modes:
-            req = dict(request)
-            req["type_filling"] = m
-            res = mt5.order_send(req)
-            tried.append((m, getattr(res, 'retcode', None)))
-            if res and res.retcode in (RET_OK, mt5.TRADE_RETCODE_PLACED):
-                return res
-
-        # 2) یک بار بدون type_filling (auto)
-        req = dict(request)
-        req.pop("type_filling", None)
-        res = mt5.order_send(req)
-        tried.append(("auto", getattr(res, 'retcode', None)))
-        if res and res.retcode in (RET_OK, mt5.TRADE_RETCODE_PLACED):
-            return res
-
-        # 3) در نهایت brute-force برای حالتی که flags نادرست گزارش شده
-        for m in (mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN):
-            if m in modes:
-                continue
-            req = dict(request)
-            req["type_filling"] = m
-            res = mt5.order_send(req)
-            tried.append((m, getattr(res, 'retcode', None)))
-            if res and res.retcode in (RET_OK, mt5.TRADE_RETCODE_PLACED):
-                return res
-
-        print(f"[order_send] filling mode attempts: {tried}")
-        return res  # آخرین نتیجه
-
     # ---------- Trading ----------
     def open_buy_position(self, tick, sl, tp, comment="", volume=None, risk_pct=None):
         print(f"🔍 [open_buy_position] Called with:")
